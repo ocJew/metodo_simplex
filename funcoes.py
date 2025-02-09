@@ -7,7 +7,7 @@ from dataclasses import dataclass
 class ProblemaPL:
     quantidade_variaveis: int
     vetor_variaveis: np.ndarray
-    vetor_coeficientes: np.ndarray
+    vetor_de_custos: np.ndarray
     matriz_coeficientes: np.ndarray
     vetor_b: np.ndarray
     vetor_operadores: np.ndarray
@@ -33,7 +33,7 @@ def contar_variaveis_e_vetor(arquivo):
     # Retorna a quantidade de variáveis e o vetor de variáveis
     return len(variaveis), vetor_variaveis
 
-def obter_vetor_coeficientes(arquivo, vetor_variaveis):
+def obter_vetor_de_custos(arquivo, vetor_variaveis):
     with open(arquivo, 'r', encoding="utf-8") as f:
         primeira_linha = f.readline().strip()  # Lê a primeira linha
 
@@ -202,7 +202,7 @@ def obter_operadores_restricoes(arquivo):
 
 def gerar_formato_matricial(arquivo):
     quantidade_variaveis, vetor_variaveis = contar_variaveis_e_vetor(arquivo)
-    vetor_coeficientes, tipo = obter_vetor_coeficientes(arquivo, vetor_variaveis)
+    vetor_de_custos, tipo = obter_vetor_de_custos(arquivo, vetor_variaveis)
     matriz_coeficientes = obter_matriz_coeficientes_restricoes(arquivo, vetor_variaveis)
     vetor_b = obter_vetor_b(arquivo)
     vetor_operadores = obter_operadores_restricoes(arquivo)
@@ -210,19 +210,54 @@ def gerar_formato_matricial(arquivo):
     var_livres = verificar_variaveis_livres(arquivo, vetor_variaveis)
     var_sinais = verificar_variaveis_sinal(arquivo, vetor_variaveis)
     print("\n Problema dado:\n")
-    resultado = gerar_formato_textual(matriz_coeficientes, vetor_operadores, vetor_b, vetor_coeficientes, vetor_variaveis, var_livres, var_sinais, tipo)
+    resultado = gerar_formato_textual(matriz_coeficientes, vetor_operadores, vetor_b, vetor_de_custos, vetor_variaveis, var_livres, var_sinais, tipo)
     print(resultado)
 
     ProblemaPL.quantidade_variaveis = quantidade_variaveis
     ProblemaPL.vetor_variaveis = vetor_variaveis
-    ProblemaPL.vetor_coeficientes = vetor_coeficientes
+    ProblemaPL.vetor_de_custos = vetor_de_custos
     ProblemaPL.matriz_coeficientes = matriz_coeficientes
     ProblemaPL.vetor_b = vetor_b
     ProblemaPL.vetor_operadores = vetor_operadores
 
     return ProblemaPL
+
+def transformar_para_forma_padrao(problema: ProblemaPL, arquivo: str) -> ProblemaPL:
+    vetor_coef_tratado = transformar_para_min(arquivo, problema.vetor_de_custos)
+    matriz_tratada, novas_variaveis, vetor_coef_tratado = tratar_variaveis_de_sinal(
+        arquivo, problema.matriz_coeficientes, problema.vetor_variaveis, vetor_coef_tratado
+    )
+    matriz_tratada, novas_variaveis, vetor_coef_tratado = tratar_variaveis_livres(
+        arquivo, matriz_tratada, novas_variaveis, vetor_coef_tratado
+    )
+    matriz_tratada, novo_vetor_b, novo_vetor_operadores = ajustar_vetor_b(
+        matriz_tratada, problema.vetor_b, problema.vetor_operadores
+    )
+    matriz_tratada, novas_variaveis, vetor_coef_tratado, novo_vetor_operadores = adicionar_variavel_folga(
+        matriz_tratada, novas_variaveis, novo_vetor_operadores, vetor_coef_tratado
+    )
+    matriz_tratada, novas_variaveis, vetor_coef_tratado, novo_vetor_operadores = adicionar_variavel_excesso(
+        matriz_tratada, novas_variaveis, novo_vetor_operadores, vetor_coef_tratado
+    )
+
+    print("\nTransformando para forma padrão:\n")
+    resultado = gerar_formato_textual(
+        matriz_tratada, novo_vetor_operadores, novo_vetor_b, vetor_coef_tratado, novas_variaveis, [], [], 0
+    )
+    print(resultado)
+
+    ProblemaPL.quantidade_variaveis = len(novas_variaveis)
+    ProblemaPL.vetor_variaveis=np.array(novas_variaveis)
+    ProblemaPL.vetor_de_custos=vetor_coef_tratado
+    ProblemaPL.matriz_coeficientes=matriz_tratada
+    ProblemaPL.vetor_b=novo_vetor_b
+    ProblemaPL.vetor_operadores_novo=novo_vetor_operadores
+
+    # Retorna um novo objeto ProblemaPL atualizado
+    return ProblemaPL
+
 # Transformar para forma padrão ##################################################################################################################################################################################################
-def transformar_para_min(arquivo, vetor_coeficientes):
+def transformar_para_min(arquivo, vetor_de_custos):
     with open(arquivo, 'r', encoding="utf-8") as f:
         primeira_linha = f.readline().strip()  # Lê a primeira linha
 
@@ -234,9 +269,9 @@ def transformar_para_min(arquivo, vetor_coeficientes):
 
     # Se o problema era de maximização, multiplica os coeficientes por -1
     if tipo_objetivo == "max":
-        vetor_coeficientes[vetor_coeficientes != 0] *= -1  # Apenas elementos diferentes de zero são multiplicados
+        vetor_de_custos[vetor_de_custos != 0] *= -1  # Apenas elementos diferentes de zero são multiplicados
 
-    return vetor_coeficientes
+    return vetor_de_custos
 
 def tratar_variaveis_de_sinal(arquivo, matriz_coeficientes, vetor_variaveis, vetor_coef_objetivo):
     with open(arquivo, 'r', encoding="utf-8") as f:
@@ -564,40 +599,6 @@ def vetor_coef_pl_auxiliar(vetor_variaveis):
     return coeficientes_objetivo
 
 ########################################################################################################################################################################################################
-def transformar_para_forma_padrao(problema: ProblemaPL, arquivo: str) -> ProblemaPL:
-    vetor_coef_tratado = transformar_para_min(arquivo, problema.vetor_coeficientes)
-    matriz_tratada, novas_variaveis, vetor_coef_tratado = tratar_variaveis_de_sinal(
-        arquivo, problema.matriz_coeficientes, problema.vetor_variaveis, vetor_coef_tratado
-    )
-    matriz_tratada, novas_variaveis, vetor_coef_tratado = tratar_variaveis_livres(
-        arquivo, matriz_tratada, novas_variaveis, vetor_coef_tratado
-    )
-    matriz_tratada, novo_vetor_b, novo_vetor_operadores = ajustar_vetor_b(
-        matriz_tratada, problema.vetor_b, problema.vetor_operadores
-    )
-    matriz_tratada, novas_variaveis, vetor_coef_tratado, novo_vetor_operadores = adicionar_variavel_folga(
-        matriz_tratada, novas_variaveis, novo_vetor_operadores, vetor_coef_tratado
-    )
-    matriz_tratada, novas_variaveis, vetor_coef_tratado, novo_vetor_operadores = adicionar_variavel_excesso(
-        matriz_tratada, novas_variaveis, novo_vetor_operadores, vetor_coef_tratado
-    )
-
-    print("\nTransformando para forma padrão:\n")
-    resultado = gerar_formato_textual(
-        matriz_tratada, novo_vetor_operadores, novo_vetor_b, vetor_coef_tratado, novas_variaveis, [], [], 0
-    )
-    print(resultado)
-
-    ProblemaPL.quantidade_variaveis = len(novas_variaveis)
-    ProblemaPL.vetor_variaveis=np.array(novas_variaveis)
-    ProblemaPL.vetor_coeficientes=vetor_coef_tratado
-    ProblemaPL.matriz_coeficientes=matriz_tratada
-    ProblemaPL.vetor_b=novo_vetor_b
-    ProblemaPL.vetor_operadores_novo=novo_vetor_operadores
-
-    # Retorna um novo objeto ProblemaPL atualizado
-    return ProblemaPL
-
 def gerar_indices_ordenados(solucao_inicial, vetor_variaveis):
     # Converte o vetor de variáveis para lista, caso seja um array NumPy
     vetor_variaveis_lista = vetor_variaveis.tolist()
@@ -704,7 +705,7 @@ def atualizar_indices_base(indices_base, j_entrada, k_saida):
     return indices_atualizados
 
 def obter_Cn_Cb_N_B(problema: ProblemaPL, colunas_base):
-    Cn, Cb = calcular_vetores_Cn_Cb(problema.matriz_coeficientes, problema.vetor_coeficientes, colunas_base)
+    Cn, Cb = calcular_vetores_Cn_Cb(problema.matriz_coeficientes, problema.vetor_de_custos, colunas_base)
     solucao_0 = variaveis_basicas(colunas_base, problema.vetor_variaveis)
     B, N = calcular_matrizes_B_N(problema.matriz_coeficientes, colunas_base)
     # print("Vetor Cn:", Cn)
@@ -815,24 +816,24 @@ def metodo_simplex(B, N, Cb, Cn, vetor_b, vetor_variaveis, colunas_base, iteraca
 def metodo_das_duas_fases(resultado, problema: ProblemaPL):
     resultado0, colunas_base, colunas_nao_encontradas = possui_solucao_basica_viavel(problema.matriz_coeficientes)
     # Salva os valores do PL original
-    vetor_coeficientes_original = problema.vetor_coeficientes
+    vetor_de_custos_original = problema.vetor_de_custos
     vetor_variaveis_original = problema.vetor_variaveis
     matriz_coeficientes_original = problema.matriz_coeficientes 
 
     print("\nNão há solução básica inicial viável visível. \nNecessita de um PL extra.\n")
     print(" PL extra: \n")
-    matriz_tratada_aux, novas_variaveis, vetor_coef_tratado_aux, variaveis_artificiais = adicionar_variavel_artificial(problema.matriz_coeficientes, problema.vetor_variaveis, problema.vetor_operadores, resultado, problema.vetor_coeficientes, colunas_nao_encontradas)
+    matriz_tratada_aux, novas_variaveis, vetor_coef_tratado_aux, variaveis_artificiais = adicionar_variavel_artificial(problema.matriz_coeficientes, problema.vetor_variaveis, problema.vetor_operadores, resultado, problema.vetor_de_custos, colunas_nao_encontradas)
     coef_obj_aux = vetor_coef_pl_auxiliar(novas_variaveis)
     resultado = gerar_formato_textual(matriz_tratada_aux, problema.vetor_operadores_novo, problema.vetor_b, coef_obj_aux, novas_variaveis, [], [], 0)
     print(resultado)
 
     ProblemaPL.vetor_variaveis = novas_variaveis
-    ProblemaPL.vetor_coeficientes = coef_obj_aux
+    ProblemaPL.vetor_de_custos = coef_obj_aux
     ProblemaPL.matriz_coeficientes = matriz_tratada_aux
     ProblemaPL.vetor_b = problema.vetor_b
     PL_aux = ProblemaPL
 
-    # resultado_original = gerar_formato_textual(problema.matriz_coeficientes, problema.vetor_operadores, problema.vetor_b, problema.vetor_coeficientes, problema.vetor_variaveis, [], [], 0)
+    # resultado_original = gerar_formato_textual(problema.matriz_coeficientes, problema.vetor_operadores, problema.vetor_b, problema.vetor_de_custos, problema.vetor_variaveis, [], [], 0)
     # print(resultado_original)
     resultado2, colunas_base, colunas_nao_encontradas = possui_solucao_basica_viavel(matriz_tratada_aux)
     B, N, Cb, Cn = obter_Cn_Cb_N_B(PL_aux, colunas_base)
@@ -845,7 +846,7 @@ def metodo_das_duas_fases(resultado, problema: ProblemaPL):
             print("\n------------------------------------------------------------------------------------------------------------------------------------------------------------")
             print("\nIniciando Fase II...")
 
-            PL_aux.vetor_coeficientes = vetor_coeficientes_original
+            PL_aux.vetor_de_custos = vetor_de_custos_original
             PL_aux.vetor_variaveis = vetor_variaveis_original
             PL_aux.matriz_coeficientes = matriz_coeficientes_original
 
@@ -855,7 +856,7 @@ def metodo_das_duas_fases(resultado, problema: ProblemaPL):
         elif resultado == "remover":
             print("Removendo variáveis artificiais da base antes da Fase II...")
             B, N, Cb, Cn, vetor_b = remover_artificiais(B, N, Cb, Cn, PL_aux.vetor_b, indices_artificiais)
-            PL_aux.vetor_coeficientes = vetor_coeficientes_original
+            PL_aux.vetor_de_custos = vetor_de_custos_original
             PL_aux.vetor_variaveis = vetor_variaveis_original
             PL_aux.matriz_coeficientes = matriz_coeficientes_original
             print("Iniciando Fase II do Simplex...")

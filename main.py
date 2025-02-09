@@ -1,4 +1,4 @@
-import funcoes 
+import funcoes
 
 # Entrada
 arquivo = "arquivo.txt"
